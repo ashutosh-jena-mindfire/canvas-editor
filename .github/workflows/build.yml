@@ -1,4 +1,4 @@
-name: build
+name: Build & Deploy
 
 on:
   push:
@@ -10,32 +10,62 @@ on:
       - 'vite.config.ts'
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
-      with:
-        node-version: ${{ matrix.node-version }}
-    - run: npm i yarn -g
-    - run: yarn
-    - run: yarn run build
-    - run: mv dist canvas-editor
-    - name: Copy folder content recursively to remote
-      uses: garygrossgarten/github-action-scp@release
-      with:
-        local: canvas-editor
-        remote: ${{ secrets.PATH }}
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        password: ${{ secrets.PASSWORD }}
-        rmRemote: true
-    - name: Executing remote ssh commands
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        password: ${{ secrets.PASSWORD }}
-        script: sed -i 's/<\/body>/${{ secrets.SCRIPT }}<\/body>/g' ${{ secrets.PATH }}/index.html
+      # 📦 Checkout
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 🟢 Setup Node (latest)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+
+      # 📥 Install dependencies
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # 🧹 Lint (optional but recommended)
+      - name: Run lint
+        run: yarn lint --if-present
+
+      # 🔍 Type check (TS projects)
+      - name: Run typecheck
+        run: yarn typecheck --if-present
+
+      # 🧪 Tests (IMPORTANT)
+      - name: Run tests
+        run: yarn test --if-present
+
+      # 🏗️ Build
+      - name: Build project
+        run: yarn build
+
+      # 📁 Rename build folder
+      - name: Prepare deployment folder
+        run: mv dist canvas-editor
+
+      # 🚀 Deploy via SCP
+      - name: Copy files to server
+        uses: garygrossgarten/github-action-scp@v2
+        with:
+          local: canvas-editor
+          remote: ${{ secrets.PATH }}
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          rmRemote: true
+
+      # ⚙️ Run remote command
+      - name: Update index.html on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          script: |
+            sed -i 's#</body>#${{ secrets.SCRIPT }}</body>#g' ${{ secrets.PATH }}/index.html
